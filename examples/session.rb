@@ -20,9 +20,3 @@ puts "2: #{result2}"
 # LLM can reference earlier context
 ~"which of the two translations was harder? store reason in <analysis>"
 puts "Analysis: #{analysis}"
-
-# Incognito mode — no memory loaded or saved
-Mana.incognito do
-  ~"translate <text1> to French, store in <french>"
-  puts "French: #{french}"
-end

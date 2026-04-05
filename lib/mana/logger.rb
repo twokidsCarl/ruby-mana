@@ -66,16 +66,6 @@ module Mana
       end
     end
 
-    # Log think tool content — full text in distinct italic cyan
-    def vlog_think(content)
-      return unless @config.verbose
-
-      $stderr.puts "\e[2m[mana]\e[0m \e[3;36m💭 Think:\e[0m"
-      content.each_line do |line|
-        $stderr.puts "\e[2m[mana]\e[0m \e[3;36m  #{line.rstrip}\e[0m"
-      end
-    end
-
     # Summarize tool input for compact logging.
     # Multi-line string values are replaced with a brief summary.
     def summarize_input(input)

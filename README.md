@@ -320,7 +320,7 @@ Unmatched prompts raise `Mana::MockError` with a helpful message suggesting the 
 
 3. **Build system prompt** — assembles rules, variable values, and function signatures into a single system prompt.
 
-4. **LLM tool-calling loop** — sends prompt to the LLM with built-in tools (`read_var`, `write_var`, `read_attr`, `write_attr`, `call_func`, `done`, `error`, `eval`, `think`). The LLM responds with tool calls, Mana executes them against the live Ruby binding, and sends results back. This loops until `done` is called or no more tool calls are returned.
+4. **LLM tool-calling loop** — sends prompt to the LLM with built-in tools (`read_var`, `write_var`, `read_attr`, `write_attr`, `call_func`, `done`, `error`, `eval`, `knowledge`). The LLM responds with tool calls, Mana executes them against the live Ruby binding, and sends results back. This loops until `done` is called or no more tool calls are returned.
 
 5. **Return value** — single `write_var` returns the value directly; multiple writes return a Hash. On Ruby 4.0+, a singleton method fallback ensures variables are accessible in the caller's scope.
 
