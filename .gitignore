@@ -1,4 +1,4 @@
-/.mana_cache/
+/.ruby-mana/
 *.gem
 .bundle/
 pkg/

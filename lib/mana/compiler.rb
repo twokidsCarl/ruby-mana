@@ -25,7 +25,7 @@ module Mana
 
       # Cache directory for generated .rb files
       def cache_dir
-        @cache_dir || ".mana_cache"
+        @cache_dir || File.join(".ruby-mana", "cache")
       end
 
       attr_writer :cache_dir

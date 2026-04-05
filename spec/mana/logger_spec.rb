@@ -15,7 +15,7 @@ RSpec.describe Mana::Logger do
       end
 
       # Expose private methods for testing
-      public :vlog, :vlog_value, :vlog_code, :vlog_think, :summarize_input, :highlight_ruby
+      public :vlog, :vlog_value, :vlog_code, :summarize_input, :highlight_ruby
     end
   end
 
@@ -123,25 +123,6 @@ RSpec.describe Mana::Logger do
       logger = test_class.new(verbose: true)
       output = capture_stderr { logger.vlog_code("line1\nline2\nline3") }
       expect(output.lines.count { |l| l.include?("[mana]") }).to eq(3)
-    end
-  end
-
-  describe "#vlog_think" do
-    it "outputs think content to stderr when verbose" do
-      logger = test_class.new(verbose: true)
-      expect { logger.vlog_think("Planning approach...") }.to output(/Think:/).to_stderr
-    end
-
-    it "does nothing when verbose is false" do
-      logger = test_class.new(verbose: false)
-      expect { logger.vlog_think("Planning...") }.not_to output.to_stderr
-    end
-
-    it "outputs each line of think content" do
-      logger = test_class.new(verbose: true)
-      output = capture_stderr { logger.vlog_think("step 1\nstep 2\nstep 3") }
-      # Header line + 3 content lines
-      expect(output.lines.count { |l| l.include?("[mana]") }).to eq(4)
     end
   end
 

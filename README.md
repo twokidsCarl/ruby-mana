@@ -144,7 +144,7 @@ end
 puts Mana.source(:celsius_to_fahrenheit, owner: Converter)
 ```
 
-Generated files live in `.mana_cache/` (add to `.gitignore`, or commit them to skip LLM on CI).
+Generated files live in `.ruby-mana/cache/` (add to `.gitignore`, or commit them to skip LLM on CI).
 
 ## Advanced
 
@@ -228,7 +228,7 @@ Mana.configure do |c|
   c.namespace = "my-project"      # nil = auto-detect from git/pwd
   c.context_window = 128_000      # default: 128_000
   c.memory_store = Mana::FileStore.new  # default file-based persistence
-  c.memory_path = ".mana"         # directory for memory files
+  c.memory_path = ".ruby-mana"    # directory for memory files
   c.context_class = nil           # custom context class (e.g. from agent frameworks)
   c.knowledge_provider = nil      # custom knowledge provider
 end

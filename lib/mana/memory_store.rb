@@ -25,7 +25,7 @@ module Mana
 
 
   # Default file-based memory store. Persists memories as JSON files.
-  # Storage path resolution: explicit base_path > config.memory_path > {cwd}/.mana
+  # Storage path resolution: explicit base_path > config.memory_path > {cwd}/.ruby-mana
   class FileStore < MemoryStore
     # Optional base_path overrides default storage location
     def initialize(base_path = nil)
@@ -65,15 +65,15 @@ module Mana
     end
 
     # Resolve the base directory for memory storage.
-    # Priority: explicit base_path > config.memory_path > {cwd}/.mana
+    # Priority: explicit base_path > config.memory_path > {cwd}/.ruby-mana
     def base_dir
       return File.join(@base_path, "memory") if @base_path
 
       custom_path = Mana.config.memory_path
       return File.join(custom_path, "memory") if custom_path
 
-      # Default fallback — project-local .mana directory
-      File.join(Dir.pwd, ".mana")
+      # Default fallback — project-local .ruby-mana directory
+      File.join(Dir.pwd, ".ruby-mana")
     end
   end
 end

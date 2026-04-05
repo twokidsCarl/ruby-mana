@@ -8,7 +8,7 @@ mana def fibonacci(n)
   ~"return an array of the first n Fibonacci numbers"
 end
 
-# First call triggers LLM compilation → cached to .mana_cache/
+# First call triggers LLM compilation → cached to .ruby-mana/cache/
 puts fibonacci(10).inspect
 
 # View the generated source

@@ -179,7 +179,7 @@ module Mana
           - Methods on the receiver (minus Ruby builtins) are also discovered.
           - No registration or JSON schema needed — just define normal Ruby methods.
           - LLM-compiled methods: `mana def method_name` lets the LLM generate the implementation
-            on first call, then caches it on disk (.mana_cache/).
+            on first call, then caches it on disk (.ruby-mana/cache/).
         TEXT
       end
     end
