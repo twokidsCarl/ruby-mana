@@ -15,7 +15,10 @@ module Mana
           "x-api-key" => @config.api_key,
           "anthropic-version" => "2023-06-01"
         })
-        parsed[:content] || []
+        {
+          content: parsed[:content] || [],
+          usage: parsed[:usage]
+        }
       end
 
       # Streaming variant — yields {type: :text_delta, text: "..."} events.
@@ -24,6 +27,7 @@ module Mana
         uri = URI("#{@config.effective_base_url}/v1/messages")
         content_blocks = []
         current_block = nil
+        usage = {}
 
         # Anthropic streams SSE events that incrementally build content blocks.
         # We reassemble them into the same format that chat() returns.
@@ -34,6 +38,10 @@ module Mana
           "anthropic-version" => "2023-06-01"
         }) do |event|
           case event[:type]
+          when "message_start"
+            usage[:input_tokens] = event.dig(:message, :usage, :input_tokens)
+          when "message_delta"
+            usage[:output_tokens] = event.dig(:usage, :output_tokens)
           when "content_block_start"
             current_block = event[:content_block].dup
             # Tool input arrives as JSON fragments — accumulate as a string, parse on stop
@@ -60,7 +68,10 @@ module Mana
           end
         end
 
-        content_blocks
+        {
+          content: content_blocks,
+          usage: usage.empty? ? nil : usage
+        }
       end
     end
   end

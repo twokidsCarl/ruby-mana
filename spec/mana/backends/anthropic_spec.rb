@@ -61,7 +61,7 @@ RSpec.describe Mana::Backends::Anthropic do
       )
     end
 
-    it "returns content blocks from response" do
+    it "returns content blocks and usage from response" do
       stub_request(:post, "https://api.anthropic.com/v1/messages")
         .to_return(
           status: 200,
@@ -70,18 +70,21 @@ RSpec.describe Mana::Backends::Anthropic do
             content: [
               { type: "text", text: "thinking..." },
               { type: "tool_use", id: "t1", name: "done", input: { result: "ok" } }
-            ]
+            ],
+            usage: { input_tokens: 100, output_tokens: 50 }
           })
         )
 
       result = backend.chat(system: "sys", messages: [], tools: tools, model: "claude-sonnet-4-20250514")
-      expect(result.size).to eq(2)
-      expect(result[0][:type]).to eq("text")
-      expect(result[1][:type]).to eq("tool_use")
-      expect(result[1][:name]).to eq("done")
+      expect(result[:content].size).to eq(2)
+      expect(result[:content][0][:type]).to eq("text")
+      expect(result[:content][1][:type]).to eq("tool_use")
+      expect(result[:content][1][:name]).to eq("done")
+      expect(result[:usage][:input_tokens]).to eq(100)
+      expect(result[:usage][:output_tokens]).to eq(50)
     end
 
-    it "returns empty array when content is nil" do
+    it "returns empty content when content is nil" do
       stub_request(:post, "https://api.anthropic.com/v1/messages")
         .to_return(
           status: 200,
@@ -90,7 +93,8 @@ RSpec.describe Mana::Backends::Anthropic do
         )
 
       result = backend.chat(system: "sys", messages: [], tools: tools, model: "claude-sonnet-4-20250514")
-      expect(result).to eq([])
+      expect(result[:content]).to eq([])
+      expect(result[:usage]).to be_nil
     end
 
     it "raises LLMError on HTTP error" do

@@ -21,7 +21,10 @@ module Mana
         }, {
           "Authorization" => "Bearer #{@config.api_key}"
         })
-        normalize_response(parsed)
+        {
+          content: normalize_response(parsed),
+          usage: normalize_usage(parsed[:usage])
+        }
       end
 
       private
@@ -122,6 +125,15 @@ module Mana
             }
           }
         end
+      end
+
+      # Convert OpenAI usage fields to our standard format.
+      def normalize_usage(usage)
+        return nil unless usage
+        {
+          input_tokens: usage[:prompt_tokens],
+          output_tokens: usage[:completion_tokens]
+        }
       end
 
       # Convert OpenAI response to Anthropic-style content blocks.

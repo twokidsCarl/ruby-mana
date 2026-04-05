@@ -100,7 +100,8 @@ RSpec.describe Mana::Engine do
           status: 200,
           headers: { "Content-Type" => "application/json" },
           body: JSON.generate({
-            content: [{ type: "tool_use", id: "t1", name: "read_var", input: { "name" => "x" } }]
+            content: [{ type: "tool_use", id: "t1", name: "read_var", input: { "name" => "x" } }],
+            usage: { input_tokens: 10, output_tokens: 5 }
           })
         )
 
@@ -223,14 +224,16 @@ RSpec.describe Mana::Engine do
             content: [
               { type: "tool_use", id: "t1", name: "write_var", input: { "name" => "xx", "value" => 1 } },
               { type: "tool_use", id: "t2", name: "write_var", input: { "name" => "yy", "value" => 2 } }
-            ]
+            ],
+            usage: { input_tokens: 10, output_tokens: 5 }
           })
         ).then
         .to_return(
           status: 200,
           headers: { "Content-Type" => "application/json" },
           body: JSON.generate({
-            content: [{ type: "tool_use", id: "t3", name: "done", input: {} }]
+            content: [{ type: "tool_use", id: "t3", name: "done", input: {} }],
+            usage: { input_tokens: 10, output_tokens: 5 }
           })
         )
 
@@ -265,6 +268,47 @@ RSpec.describe Mana::Engine do
       result = engine.execute("set <x> to 42")
       expect(result).to eq(42)
       expect(b.local_variable_get(:x)).to eq(42)
+    end
+  end
+
+  describe "#trace_data" do
+    it "captures usage and timing for each LLM call" do
+      stub_anthropic_sequence(
+        [{ type: "tool_use", id: "t1", name: "read_var", input: { "name" => "x" } }],
+        [{ type: "tool_use", id: "t2", name: "done", input: { "result" => "ok" } }]
+      )
+
+      x = 42 # rubocop:disable Lint/UselessAssignment
+      b = binding
+      engine = described_class.new(b)
+      engine.execute("read <x>")
+
+      expect(engine.trace_data).to be_a(Hash)
+      expect(engine.trace_data[:prompt]).to eq("read <x>")
+      expect(engine.trace_data[:model]).to eq(Mana.config.model)
+      expect(engine.trace_data[:steps].size).to eq(2)
+
+      step = engine.trace_data[:steps].first
+      expect(step[:iteration]).to eq(1)
+      expect(step[:latency_ms]).to be_a(Integer)
+      expect(step[:usage]).to be_a(Hash)
+      expect(step[:usage][:input_tokens]).to eq(10)
+      expect(step[:usage][:output_tokens]).to eq(5)
+    end
+
+    it "records tool calls in each step" do
+      stub_anthropic_sequence(
+        [{ type: "tool_use", id: "t1", name: "write_var", input: { "name" => "x", "value" => 1 } }],
+        [{ type: "tool_use", id: "t2", name: "done", input: { "result" => "ok" } }]
+      )
+
+      b = binding
+      engine = described_class.new(b)
+      engine.execute("set x=1")
+
+      step = engine.trace_data[:steps].first
+      expect(step[:tool_calls]).to be_a(Array)
+      expect(step[:tool_calls].first[:name]).to eq("write_var")
     end
   end
 

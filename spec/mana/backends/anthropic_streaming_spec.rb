@@ -43,17 +43,21 @@ RSpec.describe Mana::Backends::Anthropic, "#chat_stream" do
 
   it "assembles text content blocks from streaming deltas" do
     stub_streaming_response(
+      sse_event("message_start", { type: "message_start", message: { usage: { input_tokens: 80 } } }),
       sse_event("content_block_start", { type: "content_block_start", content_block: { type: "text", text: "" } }),
       sse_event("content_block_delta", { type: "content_block_delta", delta: { type: "text_delta", text: "Hello " } }),
       sse_event("content_block_delta", { type: "content_block_delta", delta: { type: "text_delta", text: "world!" } }),
       sse_event("content_block_stop", { type: "content_block_stop" }),
+      sse_event("message_delta", { type: "message_delta", usage: { output_tokens: 30 } }),
       "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
     )
 
     result = backend.chat_stream(system: "sys", messages: [], tools: tools, model: "claude-sonnet-4-20250514")
-    expect(result.size).to eq(1)
-    expect(result[0][:type]).to eq("text")
-    expect(result[0][:text]).to eq("Hello world!")
+    expect(result[:content].size).to eq(1)
+    expect(result[:content][0][:type]).to eq("text")
+    expect(result[:content][0][:text]).to eq("Hello world!")
+    expect(result[:usage][:input_tokens]).to eq(80)
+    expect(result[:usage][:output_tokens]).to eq(30)
   end
 
   it "yields text_delta events to the callback" do
@@ -91,11 +95,12 @@ RSpec.describe Mana::Backends::Anthropic, "#chat_stream" do
     )
 
     result = backend.chat_stream(system: "sys", messages: [], tools: tools, model: "claude-sonnet-4-20250514")
-    expect(result.size).to eq(1)
-    expect(result[0][:type]).to eq("tool_use")
-    expect(result[0][:name]).to eq("done")
-    expect(result[0][:id]).to eq("toolu_1")
-    expect(result[0][:input]).to eq({ result: "ok" })
+    content = result[:content]
+    expect(content.size).to eq(1)
+    expect(content[0][:type]).to eq("tool_use")
+    expect(content[0][:name]).to eq("done")
+    expect(content[0][:id]).to eq("toolu_1")
+    expect(content[0][:input]).to eq({ result: "ok" })
   end
 
   it "handles invalid JSON in tool input gracefully (returns empty hash)" do
@@ -112,8 +117,8 @@ RSpec.describe Mana::Backends::Anthropic, "#chat_stream" do
     )
 
     result = backend.chat_stream(system: "sys", messages: [], tools: tools, model: "claude-sonnet-4-20250514")
-    expect(result.size).to eq(1)
-    expect(result[0][:input]).to eq({})
+    expect(result[:content].size).to eq(1)
+    expect(result[:content][0][:input]).to eq({})
   end
 
   it "handles mixed text and tool_use blocks" do
@@ -135,11 +140,12 @@ RSpec.describe Mana::Backends::Anthropic, "#chat_stream" do
     )
 
     result = backend.chat_stream(system: "sys", messages: [], tools: tools, model: "claude-sonnet-4-20250514")
-    expect(result.size).to eq(2)
-    expect(result[0][:type]).to eq("text")
-    expect(result[0][:text]).to eq("Thinking...")
-    expect(result[1][:type]).to eq("tool_use")
-    expect(result[1][:name]).to eq("done")
+    content = result[:content]
+    expect(content.size).to eq(2)
+    expect(content[0][:type]).to eq("text")
+    expect(content[0][:text]).to eq("Thinking...")
+    expect(content[1][:type]).to eq("tool_use")
+    expect(content[1][:name]).to eq("done")
   end
 
   it "sends correct headers for streaming requests" do
@@ -152,7 +158,8 @@ RSpec.describe Mana::Backends::Anthropic, "#chat_stream" do
     allow_any_instance_of(Net::HTTP::Post).to receive(:[]=).and_call_original
 
     result = backend.chat_stream(system: "sys", messages: [], tools: tools, model: "claude-sonnet-4-20250514")
-    expect(result).to be_an(Array)
+    expect(result).to be_a(Hash)
+    expect(result[:content]).to be_an(Array)
   end
 
   it "skips [DONE] sentinel in SSE stream" do
@@ -164,8 +171,8 @@ RSpec.describe Mana::Backends::Anthropic, "#chat_stream" do
     )
 
     result = backend.chat_stream(system: "sys", messages: [], tools: tools, model: "claude-sonnet-4-20250514")
-    expect(result.size).to eq(1)
-    expect(result[0][:text]).to eq("Hi")
+    expect(result[:content].size).to eq(1)
+    expect(result[:content][0][:text]).to eq("Hi")
   end
 
   it "skips empty SSE lines" do
@@ -178,8 +185,8 @@ RSpec.describe Mana::Backends::Anthropic, "#chat_stream" do
     )
 
     result = backend.chat_stream(system: "sys", messages: [], tools: tools, model: "claude-sonnet-4-20250514")
-    expect(result.size).to eq(1)
-    expect(result[0][:text]).to eq("Hi")
+    expect(result[:content].size).to eq(1)
+    expect(result[:content][0][:text]).to eq("Hi")
   end
 
   it "handles SSE events split across chunks" do
@@ -196,8 +203,8 @@ RSpec.describe Mana::Backends::Anthropic, "#chat_stream" do
     )
 
     result = backend.chat_stream(system: "sys", messages: [], tools: tools, model: "claude-sonnet-4-20250514")
-    expect(result.size).to eq(1)
-    expect(result[0][:text]).to eq("split")
+    expect(result[:content].size).to eq(1)
+    expect(result[:content][0][:text]).to eq("split")
   end
 
   it "includes stream: true in request body" do

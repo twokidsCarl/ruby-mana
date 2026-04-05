@@ -6,7 +6,7 @@ module Mana
   # The Engine handles ~"..." prompts by calling an LLM with tool-calling
   # to interact with Ruby variables in the caller's binding.
   class Engine
-    attr_reader :config, :binding
+    attr_reader :config, :binding, :trace_data
 
     include Mana::BindingHelpers
     include Mana::PromptBuilder
@@ -187,6 +187,7 @@ module Mana
       iterations = 0
       done_result = nil
       @written_vars = {}  # Track write_var calls for return value
+      @_steps = []        # Trace data: per-iteration usage + timing + tool calls
 
       vlog("═" * 60)
       vlog("🚀 Prompt: #{prompt}")
@@ -241,6 +242,13 @@ module Mana
           { type: "tool_result", tool_use_id: tu[:id], content: result.to_s }
         end
 
+        # Record tool calls in trace step
+        if @_steps.last
+          @_steps.last[:tool_calls] = tool_uses.zip(tool_results).map { |tu, tr|
+            { name: tu[:name], input: tu[:input], result: tr[:content] }
+          }
+        end
+
         # Send tool results back to the LLM as a user message
         messages << { role: "user", content: tool_results }
         # Exit loop when the LLM signals completion via the "done" tool
@@ -251,6 +259,15 @@ module Mana
       if done_result
         messages << { role: "assistant", content: [{ type: "text", text: "Done: #{done_result}" }] }
       end
+
+      # Build trace data for external consumers (e.g. Claw::Trace)
+      @trace_data = {
+        prompt: prompt,
+        model: @config.model,
+        steps: @_steps,
+        total_iterations: iterations,
+        timestamp: Time.now.iso8601
+      }
 
       # Return written variables so Ruby 4.0+ users can capture them:
       #   result = ~"compute average and store in <result>"
@@ -326,7 +343,9 @@ module Mana
       vlog("🔄 LLM call ##{@_iteration} → #{@config.model}")
       backend = Backends::Base.for(@config)
 
-      result = if on_text && backend.respond_to?(:chat_stream)
+      t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+      raw = if on_text && backend.respond_to?(:chat_stream)
         backend.chat_stream(
           system: system,
           messages: messages,
@@ -345,6 +364,15 @@ module Mana
           max_tokens: 4096
         )
       end
+
+      latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round
+
+      # Backends return { content: [...], usage: {...} }
+      result = raw[:content]
+      usage = raw[:usage]
+
+      # Record step for trace
+      @_steps << { iteration: @_iteration, usage: usage, latency_ms: latency_ms }
 
       result.each do |block|
         type = block[:type] || block["type"]
