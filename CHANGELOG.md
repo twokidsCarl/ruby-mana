@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.13] - 2026-04-05
+
+### Changed
+- Backends (`Anthropic`, `OpenAI`) now return `{ content: [...], usage: { input_tokens:, output_tokens: } }` instead of a plain content array
+- Anthropic streaming (`chat_stream`) captures usage from `message_start` and `message_delta` events
+- OpenAI backend normalizes `prompt_tokens`/`completion_tokens` to `input_tokens`/`output_tokens`
+
+### Added
+- `Engine#trace_data` — after execution, exposes `{ prompt:, model:, steps:, total_iterations:, timestamp: }` with per-step usage, latency, and tool call details
+- LLM call latency measurement via `Process.clock_gettime` in `Engine#llm_call`
+
 ## [0.5.12] - 2026-04-04
 
 ### Changed

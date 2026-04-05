@@ -291,6 +291,31 @@ end
 
 Unmatched prompts raise `Mana::MockError` with a helpful message suggesting the stub to add.
 
+### Execution tracing
+
+After each `execute` call, the engine exposes timing and token usage data:
+
+```ruby
+engine = Mana::Engine.new(binding)
+result = engine.execute("compute <x>")
+
+trace = engine.trace_data
+# => {
+#   prompt: "compute <x>",
+#   model: "claude-sonnet-4-20250514",
+#   timestamp: "2026-04-05T10:30:00+08:00",
+#   total_iterations: 2,
+#   steps: [
+#     { iteration: 1, latency_ms: 800,
+#       usage: { input_tokens: 500, output_tokens: 200 },
+#       tool_calls: [{ name: "read_var", input: {...}, result: "..." }] },
+#     ...
+#   ]
+# }
+```
+
+Backends return usage alongside content: `backend.chat(...)` returns `{ content: [...], usage: { input_tokens:, output_tokens: } }`.
+
 ## How it works
 
 ```
