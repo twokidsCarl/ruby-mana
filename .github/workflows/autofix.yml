@@ -19,8 +19,14 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
+      id-token: write
     steps:
-      - uses: anthropics/claude-code-action@v1
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
         with:
           allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
           max_turns: 20
