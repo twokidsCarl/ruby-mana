@@ -18,6 +18,10 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
+      - name: Configure git
+        run: |
+          git config --global user.name "twokidsCarl"
+          git config --global user.email "carl@anz.io"
       - name: Run tests
         run: bundle exec rspec
       - name: Check coverage

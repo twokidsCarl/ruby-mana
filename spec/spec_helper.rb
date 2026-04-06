@@ -4,7 +4,7 @@ require "simplecov"
 SimpleCov.start do
   add_filter "/spec/"
   track_files "lib/**/*.rb"
-  minimum_coverage 70
+  minimum_coverage 70 if ENV["CI"]
 end
 
 require "webmock/rspec"
