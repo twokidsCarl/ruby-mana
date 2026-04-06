@@ -18,4 +18,17 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
-      - run: bundle exec rspec
+      - name: Run tests
+        run: bundle exec rspec
+      - name: Check coverage
+        run: |
+          coverage=$(ruby -e "require 'json'; puts JSON.parse(File.read('coverage/.last_run.json'))['result']['line']")
+          echo "Coverage: ${coverage}%"
+          ruby -e "
+            require 'json'
+            cov = JSON.parse(File.read('coverage/.last_run.json'))['result']['line']
+            if cov < 70
+              puts '::error::Coverage #{cov}% is below 70% threshold'
+              exit 1
+            end
+          "
