@@ -151,6 +151,14 @@ module Mana
 
     # Main execution loop: build context, call LLM, handle tool calls, iterate until done.
     # Optional &on_text block receives streaming text deltas for real-time display.
+    #
+    # The body used to be a single 143-line method. It is split into focused
+    # helpers so each piece is small enough to read and test:
+    #   sanitize_trailing_tool_use!  — repair messages from a prior interrupted call
+    #   run_tool_loop                — the actual while loop (LLM call + tool dispatch)
+    #   compute_return_value         — collapse @written_vars / done_result into a return
+    # The nested-context push/pop + the rollback-on-failure handling stay here
+    # because they own the method-level rescue/ensure flow.
     def execute(prompt, &on_text)
       # Track nesting depth to isolate context for nested ~"..." calls
       Thread.current[:mana_depth] ||= 0
@@ -170,22 +178,12 @@ module Mana
 
       memory = Context.current
       messages = memory.messages
-
-      # Strip trailing unpaired tool_use messages from prior calls.
-      # Both Anthropic and OpenAI reject requests where the last assistant message
-      # has tool_use blocks without corresponding tool_result responses.
-      while messages.last && messages.last[:role] == "assistant" &&
-            messages.last[:content].is_a?(Array) &&
-            messages.last[:content].any? { |b| (b[:type] || b["type"]) == "tool_use" }
-        messages.pop
-      end
+      sanitize_trailing_tool_use!(messages)
 
       # Track where we started in messages — rollback on failure
       messages_start_size = messages.size
       messages << { role: "user", content: prompt }
 
-      iterations = 0
-      done_result = nil
       @written_vars = {}  # Track write_var calls for return value
       @_steps = []        # Trace data: per-iteration usage + timing + tool calls
 
@@ -193,7 +191,58 @@ module Mana
       vlog("🚀 Prompt: #{prompt}")
       vlog("📡 Backend: #{@config.effective_base_url} / #{@config.model}")
 
-      # --- Main tool-calling loop ---
+      done_result, iterations = run_tool_loop(system_prompt, messages, &on_text)
+
+      # Append a final assistant summary so LLM has full context next call
+      if done_result
+        messages << { role: "assistant", content: [{ type: "text", text: "Done: #{done_result}" }] }
+      end
+
+      # Build trace data for external consumers (e.g. Claw::Trace)
+      @trace_data = {
+        prompt: prompt,
+        model: @config.model,
+        steps: @_steps,
+        total_iterations: iterations,
+        timestamp: Time.now.iso8601
+      }
+
+      compute_return_value(done_result)
+    rescue => e
+      # Rollback: remove messages added during this failed call so they don't
+      # pollute short-term memory for subsequent prompts
+      if messages.size > messages_start_size
+        messages.slice!(messages_start_size..)
+      end
+      raise e
+    ensure
+      # Restore outer context when exiting a nested call
+      if nested
+        Thread.current[:mana_context] = outer_context
+      end
+      Thread.current[:mana_depth] -= 1 if Thread.current[:mana_depth]
+    end
+
+    private
+
+    # Strip trailing unpaired tool_use messages from prior interrupted calls.
+    # Both Anthropic and OpenAI reject requests where the last assistant
+    # message has tool_use blocks without corresponding tool_result responses.
+    # Mutates the messages array in place.
+    def sanitize_trailing_tool_use!(messages)
+      while messages.last && messages.last[:role] == "assistant" &&
+            messages.last[:content].is_a?(Array) &&
+            messages.last[:content].any? { |b| (b[:type] || b["type"]) == "tool_use" }
+        messages.pop
+      end
+    end
+
+    # The core tool-calling loop. Returns [done_result, iteration_count].
+    # Mutates messages (appends assistant/user turns) and @_steps (trace).
+    def run_tool_loop(system_prompt, messages, &on_text)
+      iterations = 0
+      done_result = nil
+
       loop do
         iterations += 1
         @_iteration = iterations
@@ -255,23 +304,13 @@ module Mana
         break if tool_uses.any? { |t| t[:name] == "done" }
       end
 
-      # Append a final assistant summary so LLM has full context next call
-      if done_result
-        messages << { role: "assistant", content: [{ type: "text", text: "Done: #{done_result}" }] }
-      end
+      [done_result, iterations]
+    end
 
-      # Build trace data for external consumers (e.g. Claw::Trace)
-      @trace_data = {
-        prompt: prompt,
-        model: @config.model,
-        steps: @_steps,
-        total_iterations: iterations,
-        timestamp: Time.now.iso8601
-      }
-
-      # Return written variables so Ruby 4.0+ users can capture them:
-      #   result = ~"compute average and store in <result>"
-      # Single write -> return the value directly; multiple -> return Hash.
+    # Collapse the engine's outputs into a single Ruby return value:
+    # Single write_var → that value; multiple → Hash; otherwise → done_result.
+    # Ruby 4.0+ users use this to capture results: `result = ~"…"`.
+    def compute_return_value(done_result)
       if @written_vars.size == 1
         @written_vars.values.first
       elsif @written_vars.size > 1
@@ -280,20 +319,9 @@ module Mana
         # No writes — return the done() result
         done_result
       end
-    rescue => e
-      # Rollback: remove messages added during this failed call so they don't
-      # pollute short-term memory for subsequent prompts
-      if messages.size > messages_start_size
-        messages.slice!(messages_start_size..)
-      end
-      raise e
-    ensure
-      # Restore outer context when exiting a nested call
-      if nested
-        Thread.current[:mana_context] = outer_context
-      end
-      Thread.current[:mana_depth] -= 1 if Thread.current[:mana_depth]
     end
+
+    public
 
     # Mock handling — finds a matching stub and writes its values into the caller's binding.
     def handle_mock(prompt)
