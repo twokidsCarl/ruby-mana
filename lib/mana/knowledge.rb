@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "shellwords"
+require "open3"
 
 module Mana
   # Runtime knowledge base — assembles information about ruby-mana from live code.
@@ -38,16 +39,34 @@ module Mana
       # Query Ruby's ri documentation tool (runs outside bundler to access rdoc).
       # Must escape bundler env because ri needs access to system-wide rdoc files
       # that bundler's isolated gem path would hide.
+      #
+      # Uses Open3.capture3 with array args instead of backticks: no shell
+      # parsing means no chance of metacharacter injection (even though
+      # shellescape was already mitigating it), stdout/stderr are separated,
+      # and we can log the actual reason when ri fails.
       def query_ri(topic)
-        output = if defined?(Bundler)
-          Bundler.with_unbundled_env { `ri --format=markdown #{topic.shellescape} 2>&1` }
+        cmd = ["ri", "--format=markdown", topic.to_s]
+        stdout, stderr, status = if defined?(Bundler)
+          Bundler.with_unbundled_env { Open3.capture3(*cmd) }
         else
-          `ri --format=markdown #{topic.shellescape} 2>&1`
+          Open3.capture3(*cmd)
         end
-        return nil unless $?.success?
+
+        unless status.success?
+          if Mana.config.verbose
+            $stderr.puts "[mana knowledge] ri #{topic.inspect} failed (exit #{status.exitstatus}): #{stderr.strip[0, 200]}"
+          end
+          return nil
+        end
+
         # Truncate long docs to avoid flooding the LLM's context window
-        output.length > 3000 ? "#{output[0, 3000]}\n\n... (truncated, #{output.length} chars total)" : output
-      rescue
+        stdout.length > 3000 ? "#{stdout[0, 3000]}\n\n... (truncated, #{stdout.length} chars total)" : stdout
+      rescue Errno::ENOENT => e
+        # ri itself isn't installed — common in slim CI images. Worth knowing.
+        $stderr.puts "[mana knowledge] ri command not found: #{e.message}" if Mana.config.verbose
+        nil
+      rescue => e
+        $stderr.puts "[mana knowledge] ri query failed: #{e.class}: #{e.message}" if Mana.config.verbose
         nil
       end
 
