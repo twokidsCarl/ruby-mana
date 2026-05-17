@@ -60,6 +60,9 @@ module Mana
 
         # Cache filename based on source file + method name
         source_file = original.source_location&.first
+        # Clean up cache files for methods that have been deleted from this
+        # source. Memoized so it runs at most once per source file per process.
+        scrub_orphaned_caches_once(source_file) if source_file
         # Include gem version, Ruby version, and sibling function signatures so cache
         # auto-invalidates when the gem upgrades, Ruby upgrades, or dependency functions change.
         sibling_methods = begin
@@ -172,6 +175,64 @@ module Mana
       def clear!
         FileUtils.rm_rf(cache_dir) if Dir.exist?(cache_dir)
         @registry = {}
+        @scrubbed_files = nil
+      end
+
+      # Remove cache files for methods that no longer exist in `source_file`.
+      #
+      # The hash in each cache filename includes the sibling-method signature,
+      # so editing a method's prompt or its siblings already triggers
+      # regeneration. But *deleting* a `mana def` method leaves its old cache
+      # file orphaned on disk indefinitely — it won't be touched by any
+      # future compile because no method ever asks for it.
+      #
+      # This walks cache files matching the source-file prefix, extracts the
+      # method name from each, and removes ones whose method is no longer
+      # declared in the source. Safe to call repeatedly; idempotent.
+      #
+      # Returns the array of removed paths (empty if nothing to scrub).
+      def scrub_orphaned_caches(source_file)
+        return [] unless source_file && File.exist?(source_file)
+        return [] unless Dir.exist?(cache_dir)
+
+        # Live method names declared in the source file
+        live_methods = begin
+          Mana::Introspect.methods_from_file(source_file).map { |m| m[:name].to_s }
+        rescue
+          # If introspection fails, don't risk deleting anything
+          return []
+        end
+        return [] if live_methods.empty?
+
+        # Build the prefix portion of cache_file_path() for this source file
+        rel = source_file.sub("#{Dir.pwd}/", "").sub(/\.rb$/, "")
+        prefix = rel.tr("/", "_")
+        glob = File.join(cache_dir, "#{prefix}_*.rb")
+
+        removed = []
+        Dir.glob(glob).each do |path|
+          # The basename is "<prefix>_<method_name>.rb"; recover method_name
+          basename = File.basename(path, ".rb")
+          next unless basename.start_with?("#{prefix}_")
+          method_name = basename.sub(/\A#{Regexp.escape(prefix)}_/, "")
+          next if live_methods.include?(method_name)
+
+          File.delete(path)
+          removed << path
+        end
+        removed
+      rescue Errno::EACCES, Errno::ENOENT
+        # File-system errors during scrub shouldn't kill compilation
+        removed || []
+      end
+
+      # Memoized scrub: each source file is scrubbed at most once per process
+      # so repeated compiles in the same session don't keep stat-ing the FS.
+      def scrub_orphaned_caches_once(source_file)
+        @scrubbed_files ||= {}
+        return if @scrubbed_files[source_file]
+        @scrubbed_files[source_file] = true
+        scrub_orphaned_caches(source_file)
       end
 
       private
