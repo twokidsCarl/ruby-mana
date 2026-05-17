@@ -61,6 +61,38 @@ RSpec.describe Mana::Knowledge do
       end
     end
 
+    context "ri failure logging" do
+      # Regression: query_ri used to `rescue nil` silently. Now under verbose
+      # mode it logs the actual reason so users can diagnose missing ri.
+
+      it "logs to stderr when ri exits non-zero (verbose mode)" do
+        Mana.config.verbose = true
+        # Open3.capture3 returns [stdout, stderr, status] — stub a failed run
+        failed_status = double("status", success?: false, exitstatus: 1)
+        allow(Open3).to receive(:capture3).and_return(["", "ri: nothing known", failed_status])
+        expect { described_class.send(:query_ri, "NoSuchClass") }
+          .to output(/\[mana knowledge\] ri.*nothing known/).to_stderr
+      ensure
+        Mana.config.verbose = false
+      end
+
+      it "logs to stderr when ri command is not installed (verbose mode)" do
+        Mana.config.verbose = true
+        allow(Open3).to receive(:capture3).and_raise(Errno::ENOENT, "ri")
+        expect { described_class.send(:query_ri, "Array") }
+          .to output(/ri command not found/).to_stderr
+      ensure
+        Mana.config.verbose = false
+      end
+
+      it "stays silent in non-verbose mode" do
+        Mana.config.verbose = false
+        failed_status = double("status", success?: false, exitstatus: 1)
+        allow(Open3).to receive(:capture3).and_return(["", "ri: nothing known", failed_status])
+        expect { described_class.send(:query_ri, "NoSuchClass") }.not_to output.to_stderr
+      end
+    end
+
     context "runtime introspection fallback" do
       it "returns introspection when ri has no result" do
         # Use a class that ri might not document but Ruby knows about

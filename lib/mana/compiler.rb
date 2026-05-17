@@ -67,7 +67,11 @@ module Mana
             .reject { |m| m[:name] == method_name.to_s }
             .map { |m| "#{m[:name]}(#{m[:params].join(',')})" }
             .sort.join(";")
-        rescue
+        rescue => e
+          # Sibling-introspection failure shouldn't break compilation, but
+          # silently swallowing it hides real bugs (e.g. Introspect API drift,
+          # unreadable source files). Surface under verbose mode.
+          $stderr.puts "[mana compiler] sibling introspection failed for #{source_file}: #{e.class}: #{e.message}" if Mana.config.verbose
           ""
         end
         prompt_hash = Digest::SHA256.hexdigest("#{Mana::VERSION}:#{RUBY_VERSION}:#{method_name}:#{params_desc}:#{prompt}:#{sibling_methods}")[0, 16]
@@ -239,7 +243,11 @@ module Mana
           end
         end
         nil
-      rescue
+      rescue => e
+        # iseq layout can change across Ruby versions; failure here just means
+        # we couldn't extract the literal string — caller falls back gracefully.
+        # Log under verbose so version-related regressions are findable.
+        $stderr.puts "[mana compiler] iseq string extraction failed: #{e.class}: #{e.message}" if Mana.config.verbose
         nil
       end
 

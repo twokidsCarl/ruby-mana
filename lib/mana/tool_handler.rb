@@ -8,10 +8,33 @@ module Mana
   # which can access @binding, @written_vars, etc.
   # External tools (registered via Mana.register_tool) are dispatched via Procs
   # that only receive input — they cannot access the engine's binding.
+  #
+  # === Return value contract
+  #
+  # Tool handlers return a String that gets sent back to the LLM as the
+  # tool_result content. The convention:
+  #
+  #   "ok: ..."     — successful mutation (write_var, write_attr)
+  #   "error: ..."  — recoverable failure; the LLM sees this and can adjust
+  #   <other str>   — query result (the value, JSON, or rendered text)
+  #
+  # For unrecoverable failures (the "error" tool, or anything the engine
+  # should stop on), raise Mana::LLMError instead of returning a string —
+  # handle_effect re-raises it so the outer loop terminates cleanly.
   module ToolHandler
     BUILTIN_TOOLS = %w[read_var write_var read_attr write_attr call_func eval knowledge done error].freeze
 
+    # Standardized prefixes — keep in sync with the contract above.
+    TOOL_ERROR_PREFIX = "error: "
+    TOOL_OK_PREFIX    = "ok: "
+
     private
+
+    # Format a recoverable tool error consistently. Use this anywhere a
+    # handler wants to report a failure back to the LLM.
+    def tool_error(message)
+      "#{TOOL_ERROR_PREFIX}#{message}"
+    end
 
     # Dispatch a single tool call from the LLM.
     def handle_effect(tool_use)
@@ -25,7 +48,7 @@ module Mana
       elsif (handler = Mana.tool_handlers[name])
         handler.call(input)
       else
-        "error: unknown tool #{name}"
+        tool_error("unknown tool #{name}")
       end
     rescue LLMError
       # LLMError must propagate to the caller (e.g. from the error tool)
@@ -33,7 +56,7 @@ module Mana
     rescue ScriptError, StandardError => e
       # ScriptError covers SyntaxError, LoadError, NotImplementedError
       # StandardError covers everything else (NameError, TypeError, etc.)
-      "error: #{e.class}: #{e.message}"
+      tool_error("#{e.class}: #{e.message}")
     end
 
     # --- Built-in tool handlers ---
